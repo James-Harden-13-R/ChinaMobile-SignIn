@@ -1,40 +1,23 @@
 # -*- coding: utf-8 -*-
-import requests
 import os
 import json
 import ssl
+import urllib3
 from datetime import datetime, timezone, timedelta
 
-# --- [最终解决方案 v2] 猴子补丁 (Monkey-Patch) ---
-# 这是一个更强力的解决方案，直接修改Python内置的SSL模块的行为
-# 以强制它接受目标服务器的旧版安全协议。
-try:
-    _create_unverified_https_context = ssl._create_unverified_context
-except AttributeError:
-    # Legacy Python that doesn't verify HTTPS certificates by default
-    pass
-else:
-    # Handle target environment that doesn't support legacy server connect
-    def _create_unverified_https_context_for_legacy():
-        context = _create_unverified_https_context()
-        # 允许连接到使用旧版协议的服务器
-        context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0)
-        # 强制降低安全等级
-        context.set_ciphers('DEFAULT:@SECLEVEL=1')
-        return context
-    # 用我们自定义的函数替换掉默认的HTTPS上下文创建函数
-    ssl._create_default_https_context = _create_unverified_https_context_for_legacy
+# --- [最终解决方案 v3] 直接使用 urllib3 ---
+# 由于 requests 库的 SSL 处理在此环境中依然失败，
+# 我们将绕过 requests，直接使用其底层的 urllib3 库，
+# 以获得对 SSL 连接最精确的控制。
 
-
-# --- 全局配置 (根据您的截图信息填写) ---
-
+# --- 全局配置 ---
 # 身份凭证Cookie，将从GitHub Secrets中读取
 MY_COOKIE = os.environ.get('CM_COOKIE')
 
-# 签到请求的URL (来自截图的第一行)
+# 签到请求的URL
 SIGN_IN_URL = "https://h5.bj.10086.cn/ActSignIn2023/doPrize/JT/ActSignIn2023JT?token=9855077a-0bf5-4e7d-9de6-509e950de842&type=sign&constid=6867cfaawfe5Q32A8pqykEpyIyEj3DV5KR7FoAv1"
 
-# 签到请求的Headers (来自截图的Request Header部分)
+# 签到请求的Headers
 HEADERS = {
     'Content-Type': 'application/json; charset=utf-8',
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/wkwebview leadeon/11.9.5/CMCCIT',
@@ -76,14 +59,36 @@ def sign_in():
     print(f"请求Body: {json.dumps(PAYLOAD, indent=2)}")
 
     try:
-        # 【已修改】现在可以直接使用requests发送请求，因为底层的SSL行为已被修改
-        response = requests.post(SIGN_IN_URL, headers=HEADERS, json=PAYLOAD, timeout=20)
+        # --- 创建一个自定义的SSL上下文，这是解决问题的核心 ---
+        ssl_context = ssl.create_default_context()
+        # 允许连接到使用旧版协议的服务器
+        ssl_context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0)
+        # 强制降低安全等级以兼容目标服务器
+        ssl_context.set_ciphers('DEFAULT:@SECLEVEL=1')
+
+        # --- 使用 urllib3 直接发送请求 ---
+        # 创建一个使用我们自定义SSL上下文的连接池
+        http = urllib3.PoolManager(ssl_context=ssl_context)
         
-        if response.status_code == 200:
+        # 将请求体编码为 bytes
+        encoded_body = json.dumps(PAYLOAD).encode('utf-8')
+
+        # 发送POST请求
+        response = http.request(
+            'POST',
+            SIGN_IN_URL,
+            headers=HEADERS,
+            body=encoded_body,
+            timeout=20.0
+        )
+        
+        # 检查响应状态码
+        if response.status == 200:
             print("✅ 请求成功，服务器返回状态码 200。")
             
             try:
-                result = response.json()
+                # urllib3 的响应数据在 .data 属性中，是 bytes 类型，需要解码
+                result = json.loads(response.data.decode('utf-8'))
                 print("服务器响应 (JSON):")
                 print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -99,13 +104,13 @@ def sign_in():
             except json.JSONDecodeError:
                 print("解析服务器响应失败，可能不是有效的JSON格式。")
                 print("服务器原始响应内容:")
-                print(response.text)
+                print(response.data.decode('utf-8', errors='ignore'))
         else:
-            print(f"❌ 请求失败，HTTP状态码: {response.status_code}")
+            print(f"❌ 请求失败，HTTP状态码: {response.status}")
             print("服务器响应:")
-            print(response.text)
+            print(response.data.decode('utf-8', errors='ignore'))
 
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"❌ 网络请求异常: {e}")
 
     print("签到任务执行完毕。")
