@@ -5,19 +5,25 @@ import json
 import ssl
 from datetime import datetime, timezone, timedelta
 
-# --- [最终解决方案] 创建一个非常宽松的HTTP适配器以解决顽固的SSL错误 ---
-# 这个类将创建一个自定义的SSL上下文，以兼容旧版或不标准的服务器配置
-class PermissiveHttpAdapter(requests.adapters.HTTPAdapter):
-    def init_poolmanager(self, *args, **kwargs):
-        # 创建一个自定义的SSL上下文
-        context = ssl.create_default_context()
-        # 允许连接到使用旧版协议的服务器，这是解决问题的关键
+# --- [最终解决方案 v2] 猴子补丁 (Monkey-Patch) ---
+# 这是一个更强力的解决方案，直接修改Python内置的SSL模块的行为
+# 以强制它接受目标服务器的旧版安全协议。
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    # Legacy Python that doesn't verify HTTPS certificates by default
+    pass
+else:
+    # Handle target environment that doesn't support legacy server connect
+    def _create_unverified_https_context_for_legacy():
+        context = _create_unverified_https_context()
+        # 允许连接到使用旧版协议的服务器
         context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0)
-        # 强制降低安全等级，以应对最严格的环境
+        # 强制降低安全等级
         context.set_ciphers('DEFAULT:@SECLEVEL=1')
-        
-        kwargs['ssl_context'] = context
-        return super(PermissiveHttpAdapter, self).init_poolmanager(*args, **kwargs)
+        return context
+    # 用我们自定义的函数替换掉默认的HTTPS上下文创建函数
+    ssl._create_default_https_context = _create_unverified_https_context_for_legacy
 
 
 # --- 全局配置 (根据您的截图信息填写) ---
@@ -69,13 +75,9 @@ def sign_in():
     print("请求方法: POST")
     print(f"请求Body: {json.dumps(PAYLOAD, indent=2)}")
 
-    # 【已修改】创建一个使用我们自定义的、宽松的适配器的会话
-    session = requests.Session()
-    session.mount("https://", PermissiveHttpAdapter())
-
     try:
-        # 【已修改】使用自定义的session发送请求，不再需要 verify=False
-        response = session.post(SIGN_IN_URL, headers=HEADERS, json=PAYLOAD, timeout=20)
+        # 【已修改】现在可以直接使用requests发送请求，因为底层的SSL行为已被修改
+        response = requests.post(SIGN_IN_URL, headers=HEADERS, json=PAYLOAD, timeout=20)
         
         if response.status_code == 200:
             print("✅ 请求成功，服务器返回状态码 200。")
