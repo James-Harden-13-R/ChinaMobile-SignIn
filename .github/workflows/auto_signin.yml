@@ -4,30 +4,41 @@ name: China Mobile Auto Sign-in
 # 工作流触发条件
 on:
   # 1. 定时触发：使用 cron 表达式
-  # 以下时间是 UTC 时间，'0 22 * * *' 对应北京时间 (UTC+8) 的早上 6:00
+  # '0 16 * * *' 对应北京时间 (UTC+8) 的早上 00:00
   schedule:
     - cron: '0 16 * * *'
 
   # 2. 手动触发：允许您在 GitHub Actions 页面手动运行此工作流
   workflow_dispatch:
 
+# 定义一个或多个任务 (job)
 jobs:
+  # 任务ID，可自定义
   build:
-    runs-on: ubuntu-latest
+    # 【已修改】更换运行环境
+    # 将默认的 ubuntu-latest 更换为 ubuntu-20.04，以使用更兼容的SSL库
+    runs-on: ubuntu-20.04
+
+    # 任务执行的步骤
     steps:
+      # 第1步：检出(checkout)您的代码
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 第2步：设置Python环境
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
+      # 第3步：安装Python依赖库
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          # 【已修改】为urllib3指定一个稍旧的版本，以增加兼容性
+          pip install "urllib3<2.0"
 
+      # 第4步：执行签到脚本
       - name: Run sign-in script
         env:
           CM_COOKIE: ${{ secrets.CM_COOKIE }}
