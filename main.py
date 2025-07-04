@@ -2,6 +2,7 @@
 import requests
 import os
 import json
+import ssl
 from datetime import datetime, timezone, timedelta
 
 # --- 全局配置 (根据您的截图信息填写) ---
@@ -35,6 +36,16 @@ PAYLOAD = {
     "constid": "6867cfaawfe5Q32A8pqykEpyIyEj3DV5KR7FoAv1"
 }
 
+# --- [新代码] 创建一个自定义的HTTP适配器以解决SSL错误 ---
+# 这是为了解决 "UNSAFE_LEGACY_RENEGOTIATION_DISABLED" 错误
+# 原因是 h5.bj.10086.cn 服务器可能使用了较旧的SSL配置
+class CustomHttpAdapter(requests.adapters.HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context()
+        context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0)
+        kwargs['ssl_context'] = context
+        return super(CustomHttpAdapter, self).init_poolmanager(*args, **kwargs)
+
 def get_beijing_time():
     """获取北京时间，用于日志记录"""
     utc_now = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -60,10 +71,13 @@ def sign_in():
     print("请求方法: POST")
     print(f"请求Body: {json.dumps(PAYLOAD, indent=2)}")
 
+    # --- [新代码] 创建一个使用自定义适配器的会话 ---
+    session = requests.Session()
+    session.mount("https://", CustomHttpAdapter())
 
     try:
-        # 发送POST请求
-        response = requests.post(SIGN_IN_URL, headers=HEADERS, json=PAYLOAD, timeout=20)
+        # 【已修改】使用自定义的session发送POST请求
+        response = session.post(SIGN_IN_URL, headers=HEADERS, json=PAYLOAD, timeout=20)
         
         # 检查响应状态码
         if response.status_code == 200:
