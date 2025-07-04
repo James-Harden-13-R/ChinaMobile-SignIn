@@ -15,9 +15,8 @@ on:
 jobs:
   # 任务ID，可自定义
   build:
-    # 【已修改】更换运行环境
-    # 将默认的 ubuntu-latest 更换为 ubuntu-20.04，以使用更兼容的SSL库
-    runs-on: ubuntu-20.04
+    # 【已修改】切换回最新的运行环境，以确保长期可用性
+    runs-on: ubuntu-latest
 
     # 任务执行的步骤
     steps:
@@ -31,12 +30,18 @@ jobs:
         with:
           python-version: '3.10'
 
+      # 【新步骤】配置OpenSSL以兼容旧版服务器
+      # 这是解决顽固SSL错误的核心，直接在运行环境中设置兼容性选项
+      - name: Configure OpenSSL for Legacy Server
+        run: |
+          echo "OPENSSL_CONF=/dev/null" >> $GITHUB_ENV
+
       # 第3步：安装Python依赖库
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # 【已修改】为urllib3指定一个稍旧的版本，以增加兼容性
-          pip install "urllib3<2.0"
+          # 【已修改】不再需要安装旧版urllib3，使用默认的requests即可
+          pip install requests
 
       # 第4步：执行签到脚本
       - name: Run sign-in script
