@@ -74,11 +74,12 @@ def sign_in():
                 print("服务器响应 (JSON):")
                 print(json.dumps(result, indent=2, ensure_ascii=False))
 
-                # 根据响应内容判断签到是否成功
-                # 您可以根据实际返回的 'msg' 或 'code' 来调整这里的逻辑
-                if result.get('resCode') == '0000' or "成功" in result.get('resMsg', ''):
-                    message = result.get('resMsg', '签到成功！')
-                    print(f"🎉 签到成功: {message}")
+                # 【已更新】更智能地判断签到结果
+                res_msg = result.get('resMsg', '')
+                if result.get('resCode') == '0000' or "成功" in res_msg:
+                    print(f"🎉 签到成功: {res_msg}")
+                elif "已签到" in res_msg or "已参与" in res_msg:
+                    print(f"✅ 测试通过: {res_msg} (这说明您的配置是正确的！)")
                 else:
                     error_message = result.get('resMsg', '未知错误')
                     print(f"💔 签到失败: {error_message}")
